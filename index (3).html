@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0f">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MeshNet">
+<meta name="description" content="Renderização distribuída estilo BOINC via Supabase Realtime">
+<title>MeshNet · BOINC Render</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{
+  --bg:#0a0a0f; --s1:#0f0f18; --s2:#14141f; --s3:#1a1a28; --s4:#20202e;
+  --b0:rgba(255,255,255,.05); --b1:rgba(255,255,255,.09); --b2:rgba(255,255,255,.15);
+  --tx:#e8e8f0; --muted:#6a6a82; --dim:#2a2a3a;
+  --acc:#4f6ef7; --grn:#00d084; --red:#f74f4f; --gold:#f7c94f; --purple:#a855f7;
+  --ok:#00d084; --warn:#f7a84f; --err:#f74f4f;
+  --r:8px; --r2:14px; --r3:22px;
+  --mono:'DM Mono',monospace; --ui:'Outfit',system-ui,sans-serif;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+}
+html{height:100%;background:var(--bg)}
+body{font-family:var(--ui);color:var(--tx);height:100dvh;overflow:hidden;padding-top:var(--sat);background:var(--bg)}
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--dim);border-radius:2px}
+
+/* Shell */
+#shell{display:grid;grid-template-rows:52px 1fr;height:100dvh}
+#topbar{background:var(--s1);border-bottom:1px solid var(--b0);display:flex;align-items:center;padding:0 16px;gap:10px;flex-shrink:0}
+.logo{flex:1;font-family:var(--mono);font-size:12px;font-weight:500;color:rgba(232,232,240,.85);letter-spacing:.18em;display:flex;align-items:center;gap:9px}
+#cpill{font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:20px;border:1px solid rgba(255,255,255,.1);color:rgba(255,255,255,.3);white-space:nowrap;transition:all .3s}
+#cpill.on{color:var(--ok);border-color:rgba(0,208,132,.3);background:rgba(0,208,132,.08)}
+#cpill.warn{color:var(--warn);border-color:rgba(247,168,79,.3);background:rgba(247,168,79,.08)}
+#cpill.err{color:var(--err);border-color:rgba(247,79,79,.3);background:rgba(247,79,79,.08)}
+#btnback{display:none;font-family:var(--mono);font-size:11px;color:rgba(232,232,240,.4);background:transparent;border:1px solid rgba(255,255,255,.1);border-radius:6px;padding:5px 12px;cursor:pointer;transition:all .18s;letter-spacing:.06em}
+#btnback:hover{color:rgba(232,232,240,.8);border-color:rgba(255,255,255,.2)}
+
+/* Views */
+#body{position:relative;overflow:hidden;height:100%}
+.view{position:absolute;inset:0;overflow-y:auto;display:none;padding-bottom:calc(24px + var(--sab))}
+.view.on{display:block}
+#v-room{flex-direction:column;overflow:hidden}
+#v-room.on{display:flex}
+
+/* ══════════════════════════════════
+   LOBBY
+══════════════════════════════════ */
+.lobby-wrap{max-width:960px;margin:0 auto;padding:32px 20px 0}
+@media(min-width:640px){.lobby-wrap{padding:40px 28px 0}}
+
+.hero-grid{display:grid;grid-template-columns:1fr;gap:20px;margin-bottom:32px}
+@media(min-width:640px){.hero-grid{grid-template-columns:1fr 1fr;align-items:start;gap:28px}}
+
+.hero-eyebrow{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.hero-eyebrow::before{content:'';width:18px;height:1px;background:var(--muted);flex-shrink:0}
+.hero-title{font-size:clamp(28px,5vw,50px);font-weight:800;line-height:.98;letter-spacing:-.03em;margin-bottom:14px}
+.hero-title em{font-style:normal;color:var(--acc)}
+.hero-body{font-family:var(--mono);font-size:12px;line-height:1.85;color:var(--muted);margin-bottom:22px;max-width:280px}
+.hero-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Info card */
+.info-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:18px}
+.info-card-label{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.info-url{font-family:var(--mono);font-size:11px;color:var(--acc);background:var(--s3);border:1px solid var(--b0);border-radius:6px;padding:8px 10px;cursor:pointer;word-break:break-all;line-height:1.5;margin-bottom:8px;transition:background .18s}
+.info-url:hover{background:var(--s4)}
+.info-copy-btn{width:100%;background:var(--s3);border:1px solid var(--b1);border-radius:6px;padding:9px;font-family:var(--mono);font-size:11px;color:var(--muted);cursor:pointer;transition:all .18s;display:flex;align-items:center;justify-content:center;gap:7px;margin-bottom:14px}
+.info-copy-btn:hover{background:var(--s4);color:var(--tx)}
+.info-stats{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.info-stat{background:var(--s3);border-radius:6px;padding:8px 10px}
+.info-stat-l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:3px}
+.info-stat-v{font-family:var(--mono);font-size:17px;font-weight:500}
+
+/* Divider */
+.sec-divider{display:flex;align-items:center;gap:10px;max-width:960px;margin:0 auto 14px;padding:0 20px}
+@media(min-width:640px){.sec-divider{padding:0 28px}}
+.sec-divider-line{flex:1;height:1px;background:var(--b1)}
+.sec-divider-label{font-family:var(--mono);font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+.live-dot{width:6px;height:6px;border-radius:50%;background:var(--ok);box-shadow:0 0 5px rgba(0,208,132,.5);animation:blink 2s ease infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* Room cards */
+.rooms-wrap{max-width:960px;margin:0 auto;padding:0 20px}
+@media(min-width:640px){.rooms-wrap{padding:0 28px}}
+.rgrid{display:grid;gap:8px}
+@media(min-width:480px){.rgrid{grid-template-columns:repeat(2,1fr)}}
+@media(min-width:760px){.rgrid{grid-template-columns:repeat(3,1fr)}}
+.rc{background:var(--s2);border:1px solid var(--b0);border-radius:var(--r2);padding:14px 16px;cursor:pointer;transition:border-color .18s,transform .15s}
+.rc:hover{border-color:var(--acc);transform:translateY(-1px)}
+.rc:active{transform:scale(.99)}
+.rc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:5px}
+.rc-name{font-size:14px;font-weight:700;letter-spacing:-.02em}
+.rc-id{font-family:var(--mono);font-size:10px;color:var(--acc);letter-spacing:.04em;margin-bottom:10px}
+.rc-foot{display:flex;align-items:center;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted)}
+.rc-live{display:flex;align-items:center;gap:5px}
+.rc-dot{width:5px;height:5px;border-radius:50%;background:var(--ok)}
+.badge{font-family:var(--mono);font-size:9px;font-weight:500;padding:2px 7px;border-radius:4px;letter-spacing:.04em}
+.b-lock{background:rgba(247,201,79,.1);color:var(--gold);border:1px solid rgba(247,201,79,.2)}
+.b-mine{background:rgba(79,110,247,.1);color:var(--acc);border:1px solid rgba(79,110,247,.2)}
+.empty-state{grid-column:1/-1;text-align:center;padding:48px 20px;color:var(--muted);font-family:var(--mono);font-size:12px;line-height:2;border:1px dashed var(--b1);border-radius:var(--r2);background:var(--s2)}
+
+/* ══════════════════════════════════
+   ROOM — layout BOINC
+══════════════════════════════════ */
+#rbar{background:var(--s1);border-bottom:1px solid var(--b0);padding:10px 16px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.ri{flex:1;min-width:0}
+.rname{font-size:15px;font-weight:700;letter-spacing:-.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rmeta{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:1px}
+#rid-badge{font-family:var(--mono);font-size:10px;color:var(--acc);background:rgba(79,110,247,.1);border:1px solid rgba(79,110,247,.2);padding:4px 10px;border-radius:var(--r);cursor:pointer;flex-shrink:0;letter-spacing:.04em;transition:background .18s;white-space:nowrap}
+#rid-badge:hover{background:rgba(79,110,247,.18)}
+
+/* Room body: dois painéis */
+#room-body{flex:1;display:grid;overflow:hidden}
+#room-body.host-layout{grid-template-columns:1fr 340px}
+#room-body.client-layout{grid-template-columns:1fr}
+@media(max-width:760px){#room-body.host-layout{grid-template-columns:1fr}}
+
+/* Painel principal */
+#panel-main{overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:12px}
+
+/* Painel direito (HOST) */
+#panel-side{border-left:1px solid var(--b0);overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:12px;background:var(--s1)}
+@media(max-width:760px){#panel-side{display:none}}
+
+/* Metrics */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+@media(max-width:560px){.metrics{grid-template-columns:repeat(2,1fr)}}
+.metric{background:var(--s2);border:1px solid var(--b0);border-radius:var(--r2);padding:11px 12px}
+.metric-l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:4px}
+.metric-v{font-family:var(--mono);font-size:19px;font-weight:500;line-height:1;margin-bottom:4px}
+.metric-bar{height:2px;background:var(--dim);border-radius:1px}
+.metric-fill{height:100%;border-radius:1px;transition:width .5s ease}
+
+/* Render preview — tela principal */
+.render-section{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);overflow:hidden}
+.render-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--b0)}
+.render-title{font-family:var(--mono);font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:7px}
+.render-actions{display:flex;gap:6px}
+.render-canvas-wrap{position:relative;background:#000;overflow:hidden}
+#canvas-result{display:block;width:100%;image-rendering:pixelated}
+#canvas-overlay{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,10,15,.7);font-family:var(--mono);font-size:12px;color:var(--muted);flex-direction:column;gap:8px}
+.progress-ring{width:48px;height:48px}
+.progress-ring-circle{stroke:var(--acc);stroke-linecap:round;fill:none;stroke-width:3;transition:stroke-dashoffset .4s ease}
+
+/* Job builder (HOST) */
+.job-builder{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:14px}
+.job-builder-title{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;display:flex;align-items:center;justify-content:space-between}
+
+/* Tabs */
+.tabs{display:flex;gap:0;background:var(--s3);border-radius:var(--r);padding:2px;margin-bottom:12px}
+.tab{flex:1;font-family:var(--mono);font-size:11px;text-align:center;padding:6px;border-radius:6px;cursor:pointer;color:var(--muted);transition:all .18s;border:none;background:transparent}
+.tab.active{background:var(--s2);color:var(--tx);box-shadow:0 1px 4px rgba(0,0,0,.3)}
+
+/* Code editor area */
+.code-area{background:var(--bg);border:1px solid var(--b1);border-radius:var(--r);padding:10px 12px;font-family:var(--mono);font-size:12px;color:#c8d3f5;line-height:1.6;resize:none;width:100%;min-height:140px;outline:none;tab-size:2;white-space:pre}
+.code-area:focus{border-color:var(--acc)}
+
+/* Preset buttons */
+.presets{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:10px}
+.preset-btn{background:var(--s3);border:1px solid var(--b0);border-radius:var(--r);padding:7px 10px;font-family:var(--mono);font-size:10px;color:var(--muted);cursor:pointer;text-align:left;transition:all .17s;display:flex;align-items:center;gap:6px}
+.preset-btn:hover{background:var(--s4);color:var(--tx);border-color:var(--b1)}
+.preset-btn:active{transform:scale(.97)}
+
+/* Config row */
+.config-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.config-label{font-family:var(--mono);font-size:10px;color:var(--muted);flex-shrink:0}
+.config-input{background:var(--s3);border:1px solid var(--b1);border-radius:6px;padding:5px 9px;font-family:var(--mono);font-size:12px;color:var(--tx);outline:none;width:70px;transition:border-color .18s}
+.config-input:focus{border-color:var(--acc)}
+.config-select{background:var(--s3);border:1px solid var(--b1);border-radius:6px;padding:5px 9px;font-family:var(--mono);font-size:12px;color:var(--tx);outline:none;flex:1;cursor:pointer}
+
+/* Job queue (HOST side panel) */
+.job-queue-item{background:var(--s3);border:1px solid var(--b0);border-radius:var(--r2);padding:10px 12px;margin-bottom:6px}
+.jq-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px}
+.jq-id{font-family:var(--mono);font-size:11px;font-weight:500;color:var(--acc)}
+.jq-status{font-family:var(--mono);font-size:10px;padding:2px 7px;border-radius:4px}
+.jq-done{background:rgba(0,208,132,.1);color:var(--ok)}
+.jq-run{background:rgba(247,168,79,.1);color:var(--warn)}
+.jq-meta{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.jq-bar{height:2px;background:var(--dim);border-radius:1px;margin-top:7px}
+.jq-fill{height:100%;border-radius:1px;background:var(--acc);transition:width .4s}
+
+/* Members (painel lateral) */
+.sec-label-sm{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;padding-bottom:7px;border-bottom:1px solid var(--b0)}
+.member-pill{display:flex;align-items:center;gap:8px;background:var(--s2);border:1px solid var(--b0);border-radius:var(--r);padding:7px 10px;margin-bottom:5px}
+.member-pill:last-child{margin-bottom:0}
+.mp-av{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;font-weight:500;flex-shrink:0}
+.mp-info{flex:1;min-width:0}
+.mp-name{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:-.01em}
+.mp-res{font-family:var(--mono);font-size:10px;color:var(--muted)}
+.mp-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.mp-online{background:var(--ok);box-shadow:0 0 4px rgba(0,208,132,.4)}
+.mp-offline{background:var(--dim)}
+
+/* Client view */
+.client-status-card{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);padding:20px;text-align:center}
+.client-status-icon{font-size:36px;margin-bottom:10px}
+.client-status-title{font-size:16px;font-weight:700;margin-bottom:6px}
+.client-status-sub{font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.7}
+.client-canvas-wrap{background:var(--s2);border:1px solid var(--b1);border-radius:var(--r2);overflow:hidden}
+.client-canvas-header{padding:10px 14px;border-bottom:1px solid var(--b0);font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;display:flex;align-items:center;justify-content:space-between}
+#canvas-client{display:block;width:100%;background:#000;image-rendering:pixelated}
+
+/* Log */
+.logbox{background:var(--bg);border:1px solid var(--b0);border-radius:var(--r2);padding:9px 11px;font-family:var(--mono);font-size:11px;max-height:110px;overflow-y:auto}
+.ll{line-height:1.7;margin-bottom:1px;color:var(--muted)}
+.ll.OK{color:var(--ok)}.ll.W{color:var(--warn)}.ll.E{color:var(--err)}.ll.I{color:rgba(232,232,240,.35)}
+
+/* Buttons */
+.btn{font-family:var(--ui);font-size:13px;font-weight:600;padding:10px 20px;border-radius:var(--r);border:1px solid transparent;cursor:pointer;transition:all .17s;display:inline-flex;align-items:center;gap:7px;letter-spacing:-.01em;white-space:nowrap}
+.btn-p{background:var(--acc);color:#fff;border-color:var(--acc)}
+.btn-p:hover{background:#3d5ce8}
+.btn-p:active{transform:scale(.97)}
+.btn-s{background:var(--s3);color:var(--tx);border-color:var(--b1)}
+.btn-s:hover{background:var(--s4)}
+.btn-s:active{transform:scale(.97)}
+.btn-g{background:transparent;color:var(--muted);border-color:var(--b1)}
+.btn-g:hover{color:var(--tx);border-color:var(--b2)}
+.btn-ok{background:rgba(0,208,132,.12);color:var(--ok);border-color:rgba(0,208,132,.25)}
+.btn-ok:hover{background:rgba(0,208,132,.2)}
+.btn-ok:active{transform:scale(.97)}
+.btn-sm{padding:7px 13px;font-size:12px}
+.btn-xs{padding:4px 10px;font-size:11px}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none!important}
+
+/* Modal */
+#ov{display:none;position:fixed;inset:0;background:rgba(10,10,15,.7);backdrop-filter:blur(8px);z-index:100;align-items:flex-end;justify-content:center}
+#ov.on{display:flex}
+@media(min-width:500px){#ov{align-items:center;padding:20px}}
+#mod{background:var(--s1);border:1px solid var(--b1);border-radius:var(--r3) var(--r3) 0 0;padding:24px 20px;padding-bottom:calc(24px + var(--sab));width:100%;max-width:440px;animation:modal-up .2s cubic-bezier(.22,1,.36,1)}
+@media(min-width:500px){#mod{border-radius:var(--r3);padding-bottom:24px}}
+@keyframes modal-up{from{transform:translateY(20px);opacity:0}to{transform:none;opacity:1}}
+#mod::before{content:'';display:block;width:36px;height:4px;background:var(--s4);border-radius:2px;margin:0 auto 18px}
+@media(min-width:500px){#mod::before{display:none}}
+#modal-title{font-size:18px;font-weight:800;letter-spacing:-.025em;margin-bottom:4px}
+.modal-desc{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:18px;line-height:1.7}
+.field{margin-bottom:12px}
+.field label{display:block;font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin-bottom:5px}
+.field input{width:100%;background:var(--s2);border:1px solid var(--b1);border-radius:var(--r);padding:11px 13px;font-family:var(--mono);font-size:14px;color:var(--tx);outline:none;transition:border-color .2s,box-shadow .2s;-webkit-appearance:none}
+.field input:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(79,110,247,.12)}
+.field input::placeholder{color:var(--muted)}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:20px}
+
+/* Toast */
+#toast{position:fixed;bottom:calc(18px + var(--sab));left:50%;transform:translateX(-50%) translateY(12px);background:var(--s2);color:rgba(232,232,240,.9);font-family:var(--mono);font-size:12px;padding:10px 16px;border-radius:8px;border:1px solid var(--b1);opacity:0;pointer-events:none;transition:all .25s cubic-bezier(.22,1,.36,1);z-index:200;white-space:nowrap}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Sec row */
+.sec-row{display:flex;align-items:center;justify-content:space-between;padding-bottom:7px;border-bottom:1px solid var(--b0);margin-bottom:9px}
+.sec-lbl{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:6px}
+.sec-btn{font-family:var(--mono);font-size:10px;color:var(--acc);background:none;border:none;padding:0;cursor:pointer;transition:opacity .18s}
+.sec-btn:hover{opacity:.65}
+
+@keyframes fade-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.rc,.member-pill,.job-queue-item{animation:fade-in .2s ease}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinning{animation:spin .8s linear infinite;display:inline-block}
+</style>
+</head>
+<body>
+<div id="shell">
+  <div id="topbar">
+    <div class="logo">
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+        <polygon points="9,1.5 16,5.25 16,12.75 9,16.5 2,12.75 2,5.25" stroke="rgba(232,232,240,.5)" stroke-width="1" fill="none"/>
+        <circle cx="9" cy="9" r="2.5" fill="#4f6ef7"/>
+        <line x1="9" y1="3" x2="9" y2="6.6" stroke="#4f6ef7" stroke-width="1" opacity=".7"/>
+        <line x1="14.1" y1="6" x2="11.1" y2="7.7" stroke="#4f6ef7" stroke-width="1" opacity=".7"/>
+        <line x1="14.1" y1="12" x2="11.1" y2="10.3" stroke="#4f6ef7" stroke-width="1" opacity=".7"/>
+        <line x1="9" y1="15" x2="9" y2="11.4" stroke="#4f6ef7" stroke-width="1" opacity=".7"/>
+        <line x1="3.9" y1="12" x2="6.9" y2="10.3" stroke="#4f6ef7" stroke-width="1" opacity=".7"/>
+        <line x1="3.9" y1="6" x2="6.9" y2="7.7" stroke="#4f6ef7" stroke-width="1" opacity=".7"/>
+      </svg>
+      MESHNET · BOINC
+    </div>
+    <span id="cpill">● conectando</span>
+    <button id="btnback" onclick="leaveRoom()">← sair</button>
+  </div>
+
+  <div id="body">
+
+    <!-- ══ LOBBY ══ -->
+    <div class="view on" id="v-lobby">
+      <div class="lobby-wrap">
+        <div class="hero-grid">
+          <div>
+            <div class="hero-eyebrow">Renderização distribuída · BOINC</div>
+            <h1 class="hero-title">Processe<br>com todos<br>os <em>dispositivos</em></h1>
+            <p class="hero-body">
+              Crie um projeto de renderização.<br>
+              Outros dispositivos conectam e processam<br>
+              frames em paralelo — como o BOINC.
+            </p>
+            <div class="hero-actions">
+              <button class="btn btn-p" onclick="openModal('create')">
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none"><line x1="5.5" y1="1" x2="5.5" y2="10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><line x1="1" y1="5.5" x2="10" y2="5.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                Criar projeto
+              </button>
+              <button class="btn btn-s" onclick="openModal('join')">Entrar como worker</button>
+            </div>
+          </div>
+          <div class="info-card">
+            <div class="info-card-label">Link deste servidor</div>
+            <div class="info-url" id="share-url" onclick="copyShareUrl()">carregando...</div>
+            <button class="info-copy-btn" onclick="copyShareUrl()">
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"><rect x="1" y="4" width="10" height="11" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M5 4V2.5A1.5 1.5 0 016.5 1h7A1.5 1.5 0 0115 2.5v9A1.5 1.5 0 0113.5 13H12" stroke="currentColor" stroke-width="1.3"/></svg>
+              Copiar link
+            </button>
+            <div class="info-stats">
+              <div class="info-stat">
+                <div class="info-stat-l">Projetos ativos</div>
+                <div class="info-stat-v" id="stat-rooms" style="color:var(--acc)">—</div>
+              </div>
+              <div class="info-stat">
+                <div class="info-stat-l">Status</div>
+                <div class="info-stat-v" id="stat-status" style="color:var(--muted);font-size:12px">offline</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="sec-divider">
+        <div class="sec-divider-line"></div>
+        <div class="sec-divider-label">
+          <div class="live-dot"></div>
+          Projetos ativos
+          <span id="room-count"></span>
+        </div>
+        <div class="sec-divider-line"></div>
+      </div>
+
+      <div class="rooms-wrap">
+        <div class="rgrid" id="rgrid">
+          <div class="empty-state">Conectando ao Supabase Realtime...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ROOM ══ -->
+    <div class="view" id="v-room">
+      <div id="rbar">
+        <div class="ri">
+          <div class="rname" id="rname">—</div>
+          <div class="rmeta" id="rmeta">—</div>
+        </div>
+        <span id="rid-badge" onclick="copyRid()" title="Copiar link"></span>
+      </div>
+
+      <div id="room-body" class="client-layout">
+
+        <!-- MAIN PANEL -->
+        <div id="panel-main">
+
+          <!-- Métricas -->
+          <div class="metrics">
+            <div class="metric">
+              <div class="metric-l">Workers</div>
+              <div class="metric-v" id="mdev" style="color:var(--ok)">0</div>
+              <div style="font-family:var(--mono);font-size:9px;color:var(--muted)">online</div>
+            </div>
+            <div class="metric">
+              <div class="metric-l">CPU pool</div>
+              <div class="metric-v" id="mcpu" style="color:var(--acc)">0%</div>
+              <div class="metric-bar"><div class="metric-fill" id="bcpu" style="background:var(--acc);width:0%"></div></div>
+            </div>
+            <div class="metric">
+              <div class="metric-l">RAM pool</div>
+              <div class="metric-v" id="mram" style="color:var(--purple)">0GB</div>
+              <div class="metric-bar"><div class="metric-fill" id="bram" style="background:var(--purple);width:0%"></div></div>
+            </div>
+            <div class="metric">
+              <div class="metric-l">Frames</div>
+              <div class="metric-v" id="mframes" style="color:var(--gold)">0</div>
+              <div style="font-family:var(--mono);font-size:9px;color:var(--muted)" id="mframes-sub">processados</div>
+            </div>
+          </div>
+
+          <!-- HOST: canvas de resultado + job builder -->
+          <div id="host-section" style="display:none">
+
+            <!-- Preview do render -->
+            <div class="render-section">
+              <div class="render-header">
+                <span class="render-title">
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><rect x=".5" y=".5" width="9" height="9" rx="1" stroke="currentColor" stroke-width="1"/><rect x="2" y="2" width="2.5" height="2.5" fill="currentColor" opacity=".5"/><rect x="5.5" y="5.5" width="2.5" height="2.5" fill="currentColor" opacity=".5"/></svg>
+                  Resultado — montagem ao vivo
+                </span>
+                <div class="render-actions">
+                  <button class="btn btn-xs btn-s" onclick="downloadResult()">⬇ Salvar</button>
+                  <button class="btn btn-xs btn-s" onclick="clearCanvas()">✕ Limpar</button>
+                </div>
+              </div>
+              <div class="render-canvas-wrap">
+                <canvas id="canvas-result"></canvas>
+                <div id="canvas-overlay">
+                  <span style="font-size:24px" class="spinning">⬡</span>
+                  <span>Aguardando workers...</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Job builder -->
+            <div class="job-builder">
+              <div class="job-builder-title">
+                <span>Configurar tarefa</span>
+                <button class="btn btn-ok btn-xs" id="dispatch-btn" onclick="dispatchJob()" disabled>
+                  ▶ Executar em todos
+                </button>
+              </div>
+
+              <!-- Tabs: Presets / Código customizado -->
+              <div class="tabs">
+                <button class="tab active" onclick="switchTab('presets',this)">Presets</button>
+                <button class="tab" onclick="switchTab('custom',this)">Código JS</button>
+              </div>
+
+              <!-- Presets -->
+              <div id="tab-presets">
+                <div class="presets">
+                  <button class="preset-btn" onclick="loadPreset('mandelbrot')">🔵 Mandelbrot</button>
+                  <button class="preset-btn" onclick="loadPreset('julia')">🟣 Julia Set</button>
+                  <button class="preset-btn" onclick="loadPreset('plasma')">🌈 Plasma</button>
+                  <button class="preset-btn" onclick="loadPreset('raycast')">💡 Raycast</button>
+                  <button class="preset-btn" onclick="loadPreset('noise')">🌫 Perlin Noise</button>
+                  <button class="preset-btn" onclick="loadPreset('galaxy')">🌌 Galáxia</button>
+                </div>
+              </div>
+
+              <!-- Código customizado -->
+              <div id="tab-custom" style="display:none">
+                <p style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:8px;line-height:1.6">
+                  Escreva uma função JS que recebe <code style="color:var(--acc)">({x,y,w,h,frame,t})</code> e retorna uma cor <code style="color:var(--acc)">[r,g,b]</code> para cada pixel.
+                </p>
+                <textarea class="code-area" id="custom-code" spellcheck="false" placeholder="// Exemplo: gradiente simples
+function pixel({x, y, w, h, t}) {
+  const r = Math.floor((x/w) * 255);
+  const g = Math.floor((y/h) * 255);
+  const b = Math.floor(Math.sin(t)*127+128);
+  return [r, g, b];
+}"></textarea>
+              </div>
+
+              <!-- Config -->
+              <div style="margin-top:10px">
+                <div class="config-row">
+                  <span class="config-label">Resolução:</span>
+                  <select class="config-select" id="cfg-res">
+                    <option value="320x240">320×240 (rápido)</option>
+                    <option value="640x360" selected>640×360 (padrão)</option>
+                    <option value="960x540">960×540 (HD)</option>
+                    <option value="1280x720">1280×720 (Full HD)</option>
+                  </select>
+                </div>
+                <div class="config-row">
+                  <span class="config-label">Frames:</span>
+                  <input class="config-input" type="number" id="cfg-frames" value="1" min="1" max="60">
+                  <span class="config-label" style="font-size:10px">(1 = estático)</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CLIENT: status + canvas de trabalho -->
+          <div id="client-section">
+            <div class="client-status-card" id="client-idle">
+              <div class="client-status-icon">⚡</div>
+              <div class="client-status-title">Worker pronto</div>
+              <div class="client-status-sub">
+                Aguardando tarefas do HOST...<br>
+                Seu dispositivo processará frames em paralelo.
+              </div>
+            </div>
+            <div class="client-canvas-wrap" id="client-working" style="display:none">
+              <div class="client-canvas-header">
+                <span>Processando frame</span>
+                <span id="client-job-id" style="color:var(--acc)">—</span>
+              </div>
+              <canvas id="canvas-client"></canvas>
+            </div>
+          </div>
+
+          <!-- Log -->
+          <div>
+            <div class="sec-row">
+              <span class="sec-lbl">Log</span>
+              <button class="sec-btn" onclick="document.getElementById('logbox').innerHTML=''">limpar</button>
+            </div>
+            <div class="logbox" id="logbox"></div>
+          </div>
+
+        </div>
+
+        <!-- SIDE PANEL (HOST) -->
+        <div id="panel-side">
+          <div>
+            <div class="sec-label-sm">Workers conectados</div>
+            <div id="workers-list">
+              <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:16px">Nenhum worker ainda</div>
+            </div>
+          </div>
+          <div>
+            <div class="sec-label-sm">Fila de jobs</div>
+            <div id="job-queue">
+              <div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:16px">Nenhum job enviado</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- MODAL -->
+<div id="ov" onclick="if(event.target===this)closeModal()">
+  <div id="mod">
+    <h3 id="modal-title"></h3>
+    <p class="modal-desc" id="modal-desc"></p>
+    <div id="modal-body"></div>
+    <div class="modal-btns">
+      <button class="btn btn-g" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-p" id="modal-ok">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+'use strict';
+
+/* ═══════════════════════════════════════════
+   CONFIG
+═══════════════════════════════════════════ */
+const SB_URL = 'https://wvzaeoezostmydkpqelt.supabase.co';
+const SB_KEY = 'sb_publishable_sYPZqHBknaVtEr1dS0eILQ_0ViliBl6';
+
+/* ═══════════════════════════════════════════
+   ESTADO
+═══════════════════════════════════════════ */
+let sb = null, lobbyCh = null, roomCh = null;
+const myId = crypto.randomUUID();
+let myName = '', myRoomId = null, isHost = false;
+
+// Workers (HOST mantém)
+const workers  = {};   // workerId → info
+const jobs     = {};   // jobId → job
+const jobRes   = {};   // jobId → { workerId → frameData }
+
+// Canvas principal (HOST monta resultado)
+let resultCtx = null, resultW = 640, resultH = 360;
+let totalFramesDone = 0;
+
+// Preset selecionado
+let activePreset = 'mandelbrot';
+let activeTab    = 'presets';
+
+const COLORS = ['#4f6ef7','#00d084','#f74f4f','#f7c94f','#a855f7','#0891b2','#d97706','#ec4899'];
+const OS_ICO = { Windows:'🪟', Linux:'🐧', macOS:'🍎', Android:'📱', iOS:'📱' };
+
+/* ═══════════════════════════════════════════
+   PRESETS DE RENDERIZAÇÃO
+═══════════════════════════════════════════ */
+const PRESETS = {
+
+  mandelbrot: `// Conjunto de Mandelbrot
+function pixel({x, y, w, h, t}) {
+  const cx = (x/w)*3.5 - 2.5;
+  const cy = (y/h)*2 - 1;
+  let zx=0, zy=0, i=0;
+  while(zx*zx+zy*zy<4 && i<128){
+    const tmp=zx*zx-zy*zy+cx;
+    zy=2*zx*zy+cy; zx=tmp; i++;
+  }
+  const v=i/128;
+  return [Math.floor(v*9*255%255), Math.floor(v*v*255), Math.floor((1-v)*255)];
+}`,
+
+  julia: `// Conjunto de Julia (animado)
+function pixel({x, y, w, h, t}) {
+  const cr = 0.355 + Math.sin(t*0.5)*0.1;
+  const ci = 0.355 + Math.cos(t*0.5)*0.1;
+  let zx=(x/w)*3.5-1.75, zy=(y/h)*3.5-1.75, i=0;
+  while(zx*zx+zy*zy<4 && i<100){
+    const tmp=zx*zx-zy*zy+cr;
+    zy=2*zx*zy+ci; zx=tmp; i++;
+  }
+  const v=i/100;
+  return [Math.floor(v*255), Math.floor(Math.sin(v*Math.PI)*255), Math.floor((1-v)*v*4*255)];
+}`,
+
+  plasma: `// Plasma psicodélico
+function pixel({x, y, w, h, t}) {
+  const px=x/w*6, py=y/h*6;
+  const v = Math.sin(px+t)
+           + Math.sin(py+t)
+           + Math.sin((px+py+t)/2)
+           + Math.sin(Math.sqrt(px*px+py*py)+t);
+  const r=Math.floor((Math.sin(v*Math.PI)*0.5+0.5)*255);
+  const g=Math.floor((Math.sin(v*Math.PI+2.1)*0.5+0.5)*255);
+  const b=Math.floor((Math.sin(v*Math.PI+4.2)*0.5+0.5)*255);
+  return [r,g,b];
+}`,
+
+  raycast: `// Raycast simples (esferas)
+function pixel({x, y, w, h, t}) {
+  const u=(x/w)*2-1, v=(y/h)*2-1;
+  const ra=[u,v,-1], la=[Math.sin(t)*2,Math.cos(t)*2,4];
+  const oc=[ra[0]-la[0],ra[1]-la[1],ra[2]-la[2]];
+  const a=ra[0]*ra[0]+ra[1]*ra[1]+ra[2]*ra[2];
+  const b2=oc[0]*ra[0]+oc[1]*ra[1]+oc[2]*ra[2];
+  const c=oc[0]*oc[0]+oc[1]*oc[1]+oc[2]*oc[2]-1;
+  const disc=b2*b2-a*c;
+  if(disc<0) return [10,10,30];
+  const t0=(-b2-Math.sqrt(disc))/a;
+  const n=[ra[0]*t0-la[0],ra[1]*t0-la[1],ra[2]*t0-la[2]];
+  const nl=Math.sqrt(n[0]*n[0]+n[1]*n[1]+n[2]*n[2]);
+  const light=[0.577,0.577,0.577];
+  const diff=Math.max(0,(n[0]/nl)*light[0]+(n[1]/nl)*light[1]+(n[2]/nl)*light[2]);
+  return [Math.floor(diff*200+20),Math.floor(diff*140+10),Math.floor(diff*80+10)];
+}`,
+
+  noise: `// Perlin-like noise
+function pixel({x, y, w, h, t}) {
+  function fade(t){return t*t*t*(t*(t*6-15)+10)}
+  function lerp(a,b,t){return a+t*(b-a)}
+  function grad(h,x,y){const v=h&3;return((h&4)?-1:1)*((v<2)?x:y)+((h&8)?-1:1)*((v<2)?y:x)}
+  function noise(x,y){
+    const xi=Math.floor(x)&255,yi=Math.floor(y)&255;
+    const xf=x-Math.floor(x),yf=y-Math.floor(y);
+    const u=fade(xf),v=fade(yf);
+    const p=Array.from({length:256},(_,i)=>i).sort(()=>Math.random()-.5);
+    const aa=p[(p[xi]+yi)&255],ab=p[(p[xi]+yi+1)&255];
+    const ba=p[(p[xi+1]+yi)&255],bb=p[(p[xi+1]+yi+1)&255];
+    return lerp(lerp(grad(aa,xf,yf),grad(ba,xf-1,yf),u),
+                lerp(grad(ab,xf,yf-1),grad(bb,xf-1,yf-1),u),v);
+  }
+  const n=(noise(x/w*4+t,y/h*4)*0.5+0.5);
+  const m=(noise(x/w*8,y/h*8+t*0.5)*0.5+0.5);
+  return [Math.floor(n*100+m*155),Math.floor(n*200),Math.floor((1-n)*255)];
+}`,
+
+  galaxy: `// Galáxia espiral
+function pixel({x, y, w, h, t}) {
+  const cx=x/w-0.5, cy=y/h-0.5;
+  const r=Math.sqrt(cx*cx+cy*cy);
+  const angle=Math.atan2(cy,cx)+r*8-t;
+  const spiral=Math.sin(angle*3)*0.5+0.5;
+  const star=r<0.01?1:0;
+  const brightness=star+(1-r)*spiral*Math.exp(-r*4);
+  const hue=angle/(Math.PI*2);
+  const R=Math.floor(brightness*(0.5+hue*0.5)*255);
+  const G=Math.floor(brightness*(0.3+hue*0.3)*255);
+  const B=Math.floor(brightness*255);
+  return [Math.min(255,R),Math.min(255,G),Math.min(255,B)];
+}`
+};
+
+/* ═══════════════════════════════════════════
+   PWA + TOAST
+═══════════════════════════════════════════ */
+let dip;
+window.addEventListener('beforeinstallprompt', e=>{ e.preventDefault(); dip=e; });
+
+let _tt;
+function toast(msg){
+  const el=document.getElementById('toast');
+  el.textContent=msg; el.classList.add('show');
+  clearTimeout(_tt); _tt=setTimeout(()=>el.classList.remove('show'),2600);
+}
+
+/* ═══════════════════════════════════════════
+   SUPABASE INIT
+═══════════════════════════════════════════ */
+function init(){
+  try {
+    sb = supabase.createClient(SB_URL, SB_KEY, {
+      realtime: { params: { eventsPerSecond: 20 } }
+    });
+    updateShareUrl();
+    subscribeLobby();
+    const rid = new URLSearchParams(location.search).get('room');
+    if(rid) setTimeout(()=>openModal('join',rid), 900);
+  } catch(e) {
+    setPill('err','● erro');
+    ulog('Erro Supabase: '+e.message,'E');
+  }
+}
+
+/* ═══════════════════════════════════════════
+   CANAL LOBBY
+═══════════════════════════════════════════ */
+function subscribeLobby(){
+  if(lobbyCh) sb.removeChannel(lobbyCh);
+  lobbyCh = sb.channel('meshnet:boinc:lobby:v1',{
+    config:{ presence:{key:myId}, broadcast:{self:false} }
+  });
+  lobbyCh
+    .on('presence',{event:'sync'},()=>{ renderLobby(); setPill('on','● online'); setStatStatus('online'); })
+    .on('presence',{event:'join'},()=>renderLobby())
+    .on('presence',{event:'leave'},()=>renderLobby())
+    .subscribe(status=>{
+      if(status==='SUBSCRIBED'){
+        setPill('on','● online'); setStatStatus('online');
+        ulog('Supabase conectado','OK'); renderLobby();
+      }
+    });
+}
+
+function getLobbyRooms(){
+  if(!lobbyCh) return [];
+  return Object.values(lobbyCh.presenceState()).flat()
+    .filter(p=>p.type==='ROOM')
+    .map(p=>({id:p.room_id,name:p.room_name,host_name:p.host_name,
+               has_password:p.has_password,created_at:p.created_at,
+               worker_count:p.worker_count||0}));
+}
+
+async function announceRoom(rid,name,hasPwd){
+  if(!lobbyCh) return;
+  await lobbyCh.track({type:'ROOM',room_id:rid,room_name:name,
+    host_name:myName,has_password:hasPwd,created_at:nowTs(),worker_count:0});
+}
+
+async function unannounceRoom(){
+  if(lobbyCh) await lobbyCh.untrack();
+}
+
+async function updateLobbyCount(){
+  if(!lobbyCh||!isHost) return;
+  const cur=Object.values(lobbyCh.presenceState()).flat()
+    .find(p=>p.type==='ROOM'&&p.room_id===myRoomId);
+  if(cur) await lobbyCh.track({...cur,worker_count:Object.keys(workers).length});
+}
+
+/* ═══════════════════════════════════════════
+   CANAL SALA
+═══════════════════════════════════════════ */
+function subscribeRoom(rid){
+  if(roomCh){ sb.removeChannel(roomCh); roomCh=null; }
+  roomCh = sb.channel(`meshnet:boinc:room:v1:${rid}`,{
+    config:{ presence:{key:myId}, broadcast:{self:false,ack:false} }
+  });
+  roomCh
+    .on('presence',{event:'join'},({newPresences})=>{
+      if(!isHost) return;
+      newPresences.forEach(p=>{
+        if(p.type!=='WORKER'||!p.worker_id||workers[p.worker_id]) return;
+        workers[p.worker_id]={
+          id:p.worker_id, name:p.name, os:p.os,
+          cpu_avail:p.cpu_avail||0, ram_avail:p.ram_avail||0,
+          jobs_done:0, joined_at:nowTs(),
+        };
+        ulog(`⚡ Worker "${p.name}" (${p.os}) conectou — CPU:${p.cpu_avail}% RAM:${p.ram_avail}GB`,'OK');
+        updateDispatchBtn();
+        renderWorkers();
+        updateLobbyCount();
+        broadcastState();
+      });
+    })
+    .on('presence',{event:'leave'},({leftPresences})=>{
+      if(!isHost) return;
+      leftPresences.forEach(p=>{
+        if(p.type!=='WORKER'||!p.worker_id||!workers[p.worker_id]) return;
+        ulog(`❌ Worker "${workers[p.worker_id].name}" desconectou`,'W');
+        delete workers[p.worker_id];
+        updateDispatchBtn();
+        renderWorkers();
+        updateLobbyCount();
+      });
+    })
+    .on('broadcast',{event:'msg'},({payload})=>handleMsg(payload))
+    .subscribe(async status=>{
+      if(status!=='SUBSCRIBED') return;
+      if(isHost){
+        await roomCh.track({type:'HOST',member_id:myId,name:myName,os:getOS()});
+        ulog('Projeto iniciado — aguardando workers','OK');
+      } else {
+        await roomCh.track({
+          type:'WORKER', worker_id:myId, name:myName, os:getOS(),
+          cpu_avail:Math.round(15+Math.random()*65),
+          ram_avail:Math.round((0.5+Math.random()*6)*10)/10,
+          cpu_count:navigator.hardwareConcurrency||4, ram_total:8,
+        });
+        setTimeout(()=>roomSend({type:'GET_STATE',from:myId}),500);
+        ulog('Conectado como worker — aguardando jobs','OK');
+        // Heartbeat
+        const hb=setInterval(()=>{
+          if(!myRoomId||isHost){clearInterval(hb);return;}
+          roomSend({type:'HB',from:myId,
+            cpu_avail:Math.round(15+Math.random()*65),
+            ram_avail:Math.round((0.5+Math.random()*6)*10)/10});
+        },8000);
+      }
+    });
+}
+
+async function roomSend(payload){
+  if(!roomCh) return;
+  try{ await roomCh.send({type:'broadcast',event:'msg',payload}); }
+  catch(e){ ulog('Send erro: '+e.message,'E'); }
+}
+
+/* ═══════════════════════════════════════════
+   HANDLER DE MENSAGENS
+═══════════════════════════════════════════ */
+function handleMsg(msg){
+  const t=msg.type;
+
+  if(t==='GET_STATE'&&isHost){
+    broadcastState(); return;
+  }
+  if(t==='ROOM_STATE'&&!isHost){
+    applyRoomState(msg.state); return;
+  }
+  if(t==='HB'&&isHost){
+    if(workers[msg.from]){
+      workers[msg.from].cpu_avail=msg.cpu_avail;
+      workers[msg.from].ram_avail=msg.ram_avail;
+      renderWorkers();
+    }
+    return;
+  }
+  // HOST envia job de render para um worker específico
+  if(t==='RENDER_JOB'&&!isHost&&msg.target===myId){
+    executeRenderJob(msg); return;
+  }
+  // Worker devolve frame renderizado
+  if(t==='RENDER_RESULT'&&isHost){
+    handleRenderResult(msg); return;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   CRIAR SALA
+═══════════════════════════════════════════ */
+async function createRoom(name,nick,password){
+  myName=nick; isHost=true;
+  myRoomId='BN-'+Math.random().toString(36).slice(2,8).toUpperCase();
+
+  showView('room');
+  document.getElementById('btnback').style.display='';
+  document.getElementById('rname').textContent=name;
+  document.getElementById('rid-badge').textContent=myRoomId;
+  document.getElementById('rmeta').textContent=`HOST 👑 · ${myRoomId} · Projeto de renderização`;
+  document.getElementById('room-body').className='host-layout';
+  document.getElementById('host-section').style.display='';
+  document.getElementById('client-section').style.display='none';
+  updateShareUrl();
+
+  // Inicia canvas resultado
+  initResultCanvas();
+  subscribeRoom(myRoomId);
+  await announceRoom(myRoomId,name,!!password);
+
+  ulog(`Projeto "${name}" criado — ID: ${myRoomId}`,'OK');
+  ulog('Aguardando workers entrarem...','I');
+}
+
+/* ═══════════════════════════════════════════
+   ENTRAR COMO WORKER
+═══════════════════════════════════════════ */
+function joinRoom(rid,nick){
+  myName=nick; isHost=false; myRoomId=rid;
+
+  showView('room');
+  document.getElementById('btnback').style.display='';
+  document.getElementById('rname').textContent='Conectando...';
+  document.getElementById('rid-badge').textContent=rid;
+  document.getElementById('rmeta').textContent='aguardando HOST...';
+  document.getElementById('room-body').className='client-layout';
+  document.getElementById('host-section').style.display='none';
+  document.getElementById('client-section').style.display='';
+  updateShareUrl();
+
+  subscribeRoom(rid);
+  ulog(`Entrando no projeto ${rid} como worker...`,'I');
+}
+
+/* ═══════════════════════════════════════════
+   SAIR
+═══════════════════════════════════════════ */
+async function leaveRoom(){
+  if(isHost) await unannounceRoom();
+  if(roomCh){ await roomCh.untrack(); sb.removeChannel(roomCh); roomCh=null; }
+  Object.keys(workers).forEach(k=>delete workers[k]);
+  Object.keys(jobs).forEach(k=>delete jobs[k]);
+  Object.keys(jobRes).forEach(k=>delete jobRes[k]);
+  totalFramesDone=0;
+  myRoomId=null; isHost=false;
+  showView('lobby');
+  document.getElementById('btnback').style.display='none';
+  updateShareUrl();
+}
+
+/* ═══════════════════════════════════════════
+   CANVAS RESULTADO (HOST)
+═══════════════════════════════════════════ */
+function initResultCanvas(){
+  const [w,h]=getResolution();
+  resultW=w; resultH=h;
+  const c=document.getElementById('canvas-result');
+  c.width=w; c.height=h;
+  c.style.aspectRatio=`${w}/${h}`;
+  resultCtx=c.getContext('2d');
+  resultCtx.fillStyle='#000';
+  resultCtx.fillRect(0,0,w,h);
+  document.getElementById('canvas-overlay').style.display='flex';
+}
+
+function getResolution(){
+  const v=document.getElementById('cfg-res')?.value||'640x360';
+  return v.split('x').map(Number);
+}
+
+/* ═══════════════════════════════════════════
+   DISPATCH DE JOBS (HOST → workers)
+═══════════════════════════════════════════ */
+async function dispatchJob(){
+  const wlist=Object.values(workers);
+  if(!wlist.length){ toast('Nenhum worker conectado'); return; }
+
+  const [w,h]=getResolution();
+  resultW=w; resultH=h;
+  initResultCanvas();
+
+  const frames=parseInt(document.getElementById('cfg-frames')?.value||'1');
+  const code=getActiveCode();
+
+  // Divide frames entre workers (BOINC style)
+  const jobId='J-'+Math.random().toString(36).slice(2,8).toUpperCase();
+  const totalWork=Math.max(frames,wlist.length);
+  const chunks=splitWork(totalWork,wlist.length);
+
+  jobs[jobId]={
+    id:jobId, code, w, h,
+    total_frames:totalWork,
+    total_chunks:wlist.length,
+    done_chunks:0,
+    frames_done:[],
+    created_at:nowTs(), finished_at:null, status:'running',
+  };
+  jobRes[jobId]={};
+
+  document.getElementById('canvas-overlay').style.display='none';
+  document.getElementById('dispatch-btn').disabled=true;
+
+  for(let i=0;i<wlist.length;i++){
+    const worker=wlist[i];
+    const myFrames=chunks[i];
+    await roomSend({
+      type:'RENDER_JOB',
+      job_id:jobId,
+      target:worker.id,
+      code,
+      frames:myFrames,   // array de frame indexes
+      w, h,
+      chunk_index:i,
+      total_chunks:wlist.length,
+    });
+    ulog(`→ Job ${jobId} chunk ${i+1}/${wlist.length} (${myFrames.length} frames) → ${worker.name}`,'I');
+  }
+
+  renderJobQueue();
+  broadcastState();
+}
+
+function splitWork(totalFrames,n){
+  // Distribui frames entre workers
+  const frameList=Array.from({length:totalFrames},(_,i)=>i);
+  const k=Math.floor(frameList.length/n), rem=frameList.length%n;
+  const chunks=[]; let i=0;
+  for(let j=0;j<n;j++){
+    const s=k+(j<rem?1:0);
+    chunks.push(frameList.slice(i,i+s)); i+=s;
+  }
+  return chunks;
+}
+
+function getActiveCode(){
+  if(activeTab==='custom'){
+    return document.getElementById('custom-code')?.value||'function pixel({x,y,w,h}){return [x/w*255,y/h*255,128];}';
+  }
+  return PRESETS[activePreset]||PRESETS.mandelbrot;
+}
+
+/* ═══════════════════════════════════════════
+   EXECUTAR JOB (worker no browser)
+═══════════════════════════════════════════ */
+async function executeRenderJob(msg){
+  const {job_id,code,frames,w,h,chunk_index,total_chunks}=msg;
+
+  document.getElementById('client-idle').style.display='none';
+  document.getElementById('client-working').style.display='';
+  document.getElementById('client-job-id').textContent=job_id;
+
+  const canvas=document.getElementById('canvas-client');
+  canvas.width=w; canvas.height=h;
+  canvas.style.aspectRatio=`${w}/${h}`;
+  const ctx=canvas.getContext('2d');
+
+  ulog(`⚡ Job ${job_id} chunk ${chunk_index+1}/${total_chunks} — ${frames.length} frame(s) [${w}×${h}]`,'OK');
+
+  // Compila a função do pixel
+  let pixelFn;
+  try {
+    // eslint-disable-next-line no-new-func
+    pixelFn=new Function(`return (${code.includes('function pixel') ? code.replace(/^.*function pixel/,'function pixel') : 'function pixel(p){'+code+'}'})`)();
+  } catch(e) {
+    ulog('Erro ao compilar código: '+e.message,'E');
+    return;
+  }
+
+  const results=[];
+
+  for(let fi=0;fi<frames.length;fi++){
+    const frameIdx=frames[fi];
+    const t=(frameIdx/Math.max(frames[frames.length-1],1))*Math.PI*2;
+    const imgData=ctx.createImageData(w,h);
+    const data=imgData.data;
+
+    // Renderiza pixel a pixel
+    for(let py=0;py<h;py++){
+      for(let px=0;px<w;px++){
+        let rgb=[128,128,128];
+        try{ rgb=pixelFn({x:px,y:py,w,h,frame:frameIdx,t}); }catch{}
+        const idx=(py*w+px)*4;
+        data[idx]  =Math.min(255,Math.max(0,Math.floor(rgb[0])));
+        data[idx+1]=Math.min(255,Math.max(0,Math.floor(rgb[1])));
+        data[idx+2]=Math.min(255,Math.max(0,Math.floor(rgb[2])));
+        data[idx+3]=255;
+      }
+      // Yield a cada 16 linhas para não travar o browser
+      if(py%16===15) await new Promise(r=>setTimeout(r,0));
+    }
+
+    ctx.putImageData(imgData,0,0);
+    // Converte para base64 (comprimido)
+    const dataUrl=canvas.toDataURL('image/jpeg',0.85);
+    results.push({frame:frameIdx, data:dataUrl});
+    ulog(`  Frame ${frameIdx+1} renderizado`,'I');
+  }
+
+  // Devolve ao HOST
+  await roomSend({
+    type:'RENDER_RESULT',
+    job_id, from:myId,
+    chunk_index, results,
+  });
+
+  ulog(`✓ Job ${job_id} concluído — ${results.length} frame(s) enviados ao HOST`,'OK');
+  document.getElementById('client-idle').style.display='';
+  document.getElementById('client-working').style.display='none';
+}
+
+/* ═══════════════════════════════════════════
+   RECEBER RESULTADO (HOST)
+═══════════════════════════════════════════ */
+async function handleRenderResult(msg){
+  const {job_id,from,chunk_index,results}=msg;
+  if(!jobs[job_id]) return;
+  if(jobRes[job_id][chunk_index]!==undefined) return; // dedup
+
+  const job=jobs[job_id];
+  jobRes[job_id][chunk_index]=results;
+  job.done_chunks++;
+  if(workers[from]) workers[from].jobs_done=(workers[from].jobs_done||0)+1;
+
+  // Pinta os frames recebidos no canvas resultado
+  for(const {frame,data} of results){
+    await paintFrame(frame,data,job.w,job.h,job.total_frames);
+    job.frames_done.push(frame);
+    totalFramesDone++;
+  }
+
+  // Atualiza métricas
+  document.getElementById('mframes').textContent=totalFramesDone;
+
+  if(job.done_chunks>=job.total_chunks){
+    job.status='done'; job.finished_at=nowTs();
+    ulog(`✅ Job ${job_id} CONCLUÍDO — ${job.total_frames} frame(s) montados`,'OK');
+    toast(`Job ${job_id} concluído!`);
+    document.getElementById('dispatch-btn').disabled=false;
+  }
+
+  renderJobQueue();
+  renderWorkers();
+  broadcastState();
+}
+
+async function paintFrame(frameIdx,dataUrl,w,h,totalFrames){
+  if(!resultCtx) return;
+  // Para múltiplos frames: divide o canvas em colunas
+  const cols=Math.ceil(Math.sqrt(totalFrames));
+  const fw=Math.floor(w/cols);
+  const fh=Math.floor(h/Math.ceil(totalFrames/cols));
+  const col=frameIdx%cols;
+  const row=Math.floor(frameIdx/cols);
+
+  return new Promise(res=>{
+    const img=new Image();
+    img.onload=()=>{
+      if(totalFrames===1){
+        resultCtx.drawImage(img,0,0,w,h);
+      } else {
+        resultCtx.drawImage(img,col*fw,row*fh,fw,fh);
+      }
+      res();
+    };
+    img.src=dataUrl;
+  });
+}
+
+function downloadResult(){
+  const c=document.getElementById('canvas-result');
+  const a=document.createElement('a');
+  a.download=`meshnet-render-${nowTs().replace(/:/g,'-')}.png`;
+  a.href=c.toDataURL('image/png');
+  a.click();
+  toast('Imagem salva!');
+}
+
+function clearCanvas(){
+  if(!resultCtx) return;
+  resultCtx.fillStyle='#000';
+  resultCtx.fillRect(0,0,resultW,resultH);
+  totalFramesDone=0;
+  document.getElementById('mframes').textContent='0';
+  document.getElementById('canvas-overlay').style.display='flex';
+}
+
+/* ═══════════════════════════════════════════
+   ESTADO BROADCAST
+═══════════════════════════════════════════ */
+function buildState(){
+  const wlist=Object.values(workers);
+  return {
+    room_id:   myRoomId,
+    room_name: document.getElementById('rname').textContent,
+    host_name: myName,
+    workers:   wlist,
+    active_count: wlist.length,
+    pool_cpu: Math.round(wlist.reduce((a,w)=>a+w.cpu_avail,0)*10)/10,
+    pool_ram: Math.round(wlist.reduce((a,w)=>a+w.ram_avail,0)*100)/100,
+    jobs_summary: Object.values(jobs).slice(-10).map(j=>({
+      id:j.id, status:j.status,
+      total:j.total_chunks, done:j.done_chunks,
+      created_at:j.created_at, finished_at:j.finished_at,
+    })),
+    frames_done: totalFramesDone,
+  };
+}
+
+async function broadcastState(){
+  if(!isHost) return;
+  const state=buildState();
+  await roomSend({type:'ROOM_STATE',state});
+  applyRoomState(state);
+}
+
+function applyRoomState(st){
+  if(!st) return;
+  document.getElementById('mdev').textContent=st.active_count||0;
+  document.getElementById('mcpu').textContent=(st.pool_cpu||0)+'%';
+  document.getElementById('mram').textContent=(st.pool_ram||0).toFixed(1)+'GB';
+  document.getElementById('mframes').textContent=st.frames_done||0;
+  document.getElementById('bcpu').style.width=
+    Math.min((st.pool_cpu||0)/Math.max((st.active_count||1)*100,1)*100,100)+'%';
+  document.getElementById('bram').style.width=
+    Math.min((st.pool_ram||0)/Math.max((st.active_count||1)*8,1)*100,100)+'%';
+
+  if(!isHost && st.room_name && st.room_name!=='Conectando...'){
+    document.getElementById('rname').textContent=st.room_name;
+    document.getElementById('rmeta').textContent=`HOST: ${st.host_name} · Projeto de renderização`;
+    document.getElementById('rid-badge').textContent=st.room_id||myRoomId;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   RENDER UI
+═══════════════════════════════════════════ */
+function renderLobby(){
+  const rooms=getLobbyRooms();
+  const g=document.getElementById('rgrid');
+  const cnt=document.getElementById('room-count');
+  const stat=document.getElementById('stat-rooms');
+  if(cnt) cnt.textContent=rooms.length?`(${rooms.length})`:'';
+  if(stat) stat.textContent=rooms.length;
+  if(!rooms.length){
+    g.innerHTML='<div class="empty-state">Nenhum projeto ativo.<br>Crie o primeiro!</div>'; return;
+  }
+  g.innerHTML=rooms.map(r=>`
+    <div class="rc" onclick="clickRoom('${esc(r.id)}')">
+      <div class="rc-top">
+        <div class="rc-name">${esc(r.name)}</div>
+        <div>
+          ${r.has_password?'<span class="badge b-lock">🔒</span>':''}
+          ${r.id===myRoomId?'<span class="badge b-mine">meu</span>':''}
+        </div>
+      </div>
+      <div class="rc-id">${r.id}</div>
+      <div class="rc-foot">
+        <span class="rc-live"><span class="rc-dot"></span>${r.worker_count} worker(s)</span>
+        <span>${esc(r.host_name)}</span>
+        <span>${r.created_at}</span>
+      </div>
+    </div>`).join('');
+}
+
+function renderWorkers(){
+  const wlist=Object.values(workers);
+  const el=document.getElementById('workers-list');
+  if(!el) return;
+
+  // Atualiza métricas
+  document.getElementById('mdev').textContent=wlist.length;
+  document.getElementById('mcpu').textContent=
+    Math.round(wlist.reduce((a,w)=>a+w.cpu_avail,0)*10)/10+'%';
+  document.getElementById('mram').textContent=
+    Math.round(wlist.reduce((a,w)=>a+w.ram_avail,0)*100)/100+'GB';
+  document.getElementById('bcpu').style.width=
+    Math.min(wlist.reduce((a,w)=>a+w.cpu_avail,0)/Math.max(wlist.length*100,1)*100,100)+'%';
+  document.getElementById('bram').style.width=
+    Math.min(wlist.reduce((a,w)=>a+w.ram_avail,0)/Math.max(wlist.length*8,1)*100,100)+'%';
+
+  if(!wlist.length){
+    el.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:16px">Nenhum worker ainda</div>';
+    return;
+  }
+  el.innerHTML=wlist.map((w,i)=>{
+    const c=COLORS[i%COLORS.length];
+    const ini=(w.name||'?').slice(0,2).toUpperCase();
+    const ico=OS_ICO[w.os]||'💻';
+    return `<div class="member-pill">
+      <div class="mp-av" style="background:${c}18;color:${c};border:1px solid ${c}30">${ini}</div>
+      <div class="mp-info">
+        <div class="mp-name">${esc(w.name)} ${ico}</div>
+        <div class="mp-res">${w.cpu_avail}% CPU · ${w.ram_avail}GB · ${w.jobs_done} jobs</div>
+      </div>
+      <div class="mp-dot mp-online"></div>
+    </div>`;
+  }).join('');
+}
+
+function renderJobQueue(){
+  const el=document.getElementById('job-queue');
+  if(!el) return;
+  const jlist=Object.values(jobs).reverse().slice(0,8);
+  if(!jlist.length){
+    el.innerHTML='<div style="font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:16px">Nenhum job enviado</div>';
+    return;
+  }
+  el.innerHTML=jlist.map(j=>{
+    const p=j.total_chunks>0?Math.round(j.done_chunks/j.total_chunks*100):0;
+    return `<div class="job-queue-item">
+      <div class="jq-head">
+        <span class="jq-id">${j.id}</span>
+        <span class="jq-status ${j.status==='done'?'jq-done':'jq-run'}">
+          ${j.status==='done'?'✓ done':'⏳ '+p+'%'}
+        </span>
+      </div>
+      <div class="jq-meta">${j.done_chunks}/${j.total_chunks} chunks · ${j.created_at}</div>
+      <div class="jq-bar"><div class="jq-fill" style="width:${p}%"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function updateDispatchBtn(){
+  const btn=document.getElementById('dispatch-btn');
+  if(!btn) return;
+  const n=Object.keys(workers).length;
+  btn.disabled=n===0;
+  btn.textContent=n>0?`▶ Executar em ${n} worker(s)`: '▶ Executar em todos';
+}
+
+/* ═══════════════════════════════════════════
+   UI TABS E PRESETS
+═══════════════════════════════════════════ */
+function switchTab(tab,el){
+  activeTab=tab;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-presets').style.display=tab==='presets'?'':'none';
+  document.getElementById('tab-custom').style.display=tab==='custom'?'':'none';
+}
+
+function loadPreset(name){
+  activePreset=name;
+  const code=PRESETS[name];
+  document.getElementById('custom-code').value=code;
+  // Muda para aba de código para mostrar o preset
+  const tabs=document.querySelectorAll('.tab');
+  tabs.forEach((t,i)=>{t.classList.remove('active'); if(i===1)t.classList.add('active');});
+  document.getElementById('tab-presets').style.display='none';
+  document.getElementById('tab-custom').style.display='';
+  activeTab='custom';
+  toast(`Preset "${name}" carregado`);
+}
+
+/* ═══════════════════════════════════════════
+   MODAL
+═══════════════════════════════════════════ */
+function openModal(mode,rid){
+  const h=document.getElementById('modal-title'),p=document.getElementById('modal-desc');
+  const b=document.getElementById('modal-body'),ok=document.getElementById('modal-ok');
+  if(mode==='create'){
+    h.textContent='Criar projeto';
+    p.textContent='Você será o servidor HOST — workers entram e processam frames para você';
+    b.innerHTML=`
+      <div class="field"><label>Seu nome</label>
+        <input id="f-nick" placeholder="ex: servidor-ana" value="${esc(myName||'')}" autocomplete="nickname"></div>
+      <div class="field"><label>Nome do projeto</label>
+        <input id="f-room" placeholder="ex: Render Galáxia 4K" autocomplete="off"></div>
+      <div class="field"><label>Senha (opcional)</label>
+        <input id="f-pass" type="password" placeholder="••••••••" autocomplete="new-password"></div>`;
+    ok.textContent='Criar projeto';
+    ok.onclick=()=>{
+      const nick=gv('f-nick'),name=gv('f-room'),pass=gv('f-pass');
+      if(!nick){toast('Preencha seu nome');return;}
+      if(!name){toast('Preencha o nome do projeto');return;}
+      closeModal(); createRoom(name,nick,pass);
+    };
+  } else {
+    h.textContent='Entrar como worker';
+    p.textContent=rid?`Entrando no projeto ${rid} como worker`:'Cole o ID do projeto';
+    b.innerHTML=`
+      <div class="field"><label>Seu nome</label>
+        <input id="f-nick" placeholder="ex: meu-pc" value="${esc(myName||'')}" autocomplete="nickname"></div>
+      ${!rid?`<div class="field"><label>ID do projeto</label>
+        <input id="f-rid" placeholder="ex: BN-AB12CD" autocomplete="off"
+          oninput="this.value=this.value.toUpperCase()"></div>`:''}
+      <div class="field"><label>Senha (se necessário)</label>
+        <input id="f-pass" type="password" placeholder="••••••••" autocomplete="current-password"></div>`;
+    ok.textContent='Entrar como worker';
+    ok.onclick=()=>{
+      const nick=gv('f-nick'),r=rid||gv('f-rid');
+      if(!nick){toast('Preencha seu nome');return;}
+      if(!r){toast('Informe o ID do projeto');return;}
+      closeModal(); joinRoom(r,nick);
+    };
+  }
+  document.getElementById('ov').classList.add('on');
+  setTimeout(()=>document.querySelector('#modal-body input')?.focus(),80);
+  document.getElementById('mod').onkeydown=e=>{if(e.key==='Enter')ok.click();};
+}
+function closeModal(){document.getElementById('ov').classList.remove('on');}
+
+/* ═══════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════ */
+function showView(n){
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.getElementById('v-'+n).classList.add('on');
+}
+function setPill(cls,txt){const el=document.getElementById('cpill');el.className=cls;el.id='cpill';el.textContent=txt;}
+function setStatStatus(txt){const el=document.getElementById('stat-status');if(el){el.textContent=txt;el.style.color='var(--ok)';el.style.fontSize='13px';}}
+function ulog(msg,lvl='I'){
+  const p=document.getElementById('logbox');if(!p)return;
+  const d=document.createElement('div');d.className='ll '+lvl;
+  d.textContent=`[${new Date().toLocaleTimeString('pt-BR',{hour12:false})}] ${msg}`;
+  p.prepend(d);while(p.children.length>100)p.lastChild.remove();
+}
+function gv(id){return document.getElementById(id)?.value.trim()||'';}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function nowTs(){return new Date().toLocaleTimeString('pt-BR',{hour12:false});}
+function getOS(){
+  const ua=navigator.userAgent;
+  if(/android/i.test(ua))return'Android';
+  if(/iphone|ipad/i.test(ua))return'iOS';
+  if(/mac/i.test(ua))return'macOS';
+  if(/win/i.test(ua))return'Windows';
+  if(/linux/i.test(ua))return'Linux';
+  return'Outro';
+}
+function updateShareUrl(){
+  const room=myRoomId?`?room=${myRoomId}`:'';
+  const url=location.origin+location.pathname+room;
+  const el=document.getElementById('share-url');
+  if(el)el.textContent=url;
+}
+function copyShareUrl(){
+  const url=document.getElementById('share-url')?.textContent||location.href;
+  navigator.clipboard?.writeText(url).then(()=>toast('Link copiado!')).catch(()=>toast('Copie: '+url));
+}
+function copyRid(){
+  const rid=myRoomId||document.getElementById('rid-badge')?.textContent||'';
+  if(!rid)return;
+  const url=location.origin+location.pathname+`?room=${rid}`;
+  navigator.clipboard?.writeText(url).then(()=>toast('Link do projeto copiado!'));
+}
+function clickRoom(rid){openModal('join',rid);}
+
+document.addEventListener('DOMContentLoaded',()=>{
+  updateShareUrl();
+  init();
+});
+</script>
+</body>
+</html>
